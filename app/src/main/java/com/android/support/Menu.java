@@ -222,7 +222,22 @@ public class Menu extends BaseMenu {
     public void ShowMenu() {
         __frameLayout.addView(__mRootContainer);
         __featureContainer.removeAllViews();
-        featureList(GetFeatureList(), __featureContainer);
+        tabPages.clear();
+        String featureJson = null;
+        try {
+            featureJson = GetFeatureList();
+        } catch (Throwable t) {
+            Log.e(TAG, "GetFeatureList failed (native lib not ready?)", t);
+        }
+        if (featureJson == null || featureJson.isEmpty()) {
+            iTextView.add(__featureContainer,
+                    "⚠️ Native features unavailable.\nThe menu UI loaded, but the game's "
+                    + "native library isn't attached — install this as a mod inside a "
+                    + "target app to see features.");
+            com.android.support.components.SpartanAnim.popIn(__mRootContainer);
+            return;
+        }
+        featureList(featureJson, __featureContainer);
         com.android.support.components.SpartanAnim.popIn(__mRootContainer);
     }
 
@@ -322,12 +337,19 @@ public class Menu extends BaseMenu {
 
     /**
      * Tab-based layout (ImGui style): every ICategory becomes a tab;
-     * its features render into that tab's own page. Uncategorized items
-     * land in a "Misc" tab.
+     * its features render into that tab's own page.
+     * IMPORTANT: everything is added INSIDE linearLayout (__featureContainer),
+     * because its parent is a ScrollView which allows only one child.
      */
-    @SuppressLint("WrongConstant")
     private void featureList(String feature, LinearLayout linearLayout) {
-        List<FeatureEntity> features = FeatureParser.parse(feature);
+        List<FeatureEntity> features;
+        try {
+            features = FeatureParser.parse(feature);
+        } catch (Throwable t) {
+            Log.e(TAG, "feature parse failed", t);
+            iTextView.add(linearLayout, "Failed to load feature list");
+            return;
+        }
 
         // ── bucket features by their preceding ICategory ──
         java.util.ArrayList<String> order = new java.util.ArrayList<>();
@@ -345,53 +367,66 @@ public class Menu extends BaseMenu {
                 }
                 continue; // category name becomes the tab label
             }
+            if (buckets.get(current) == null)
+                buckets.put(current, new java.util.ArrayList<>());
             buckets.get(current).add(item);
         }
 
-        // hide tab bar if only one tab
         boolean showTabs = order.size() > 1;
 
-        // ── build tab bar ──
+        // ── tab bar lives INSIDE linearLayout (single child of scrollview) ──
+        tabBarRow = new LinearLayout(getContext);
+        tabBarRow.setOrientation(LinearLayout.HORIZONTAL);
+        tabBarRow.setPadding(12, 10, 12, 12);
         if (showTabs) {
             HorizontalScrollView tabScroll = new HorizontalScrollView(getContext);
             tabScroll.setHorizontalScrollBarEnabled(false);
             tabScroll.setBackgroundColor(Color.parseColor("#141B2E"));
             tabScroll.setLayoutParams(new LinearLayout.LayoutParams(
                     MATCH_PARENT, WRAP_CONTENT));
-            tabBarRow = new LinearLayout(getContext);
-            tabBarRow.setOrientation(LinearLayout.HORIZONTAL);
-            tabBarRow.setPadding(12, 8, 12, 8);
             tabScroll.addView(tabBarRow);
-
-            // insert tab bar above the scroll area in the menu body
-            ViewGroup parent = (ViewGroup) linearLayout.getParent();
-            int idx = parent.indexOfChild(linearLayout);
-            parent.addView(tabScroll, idx);
+            linearLayout.addView(tabScroll);
         }
 
-        // ── content host: one page per tab ──
+        // ── content host also INSIDE linearLayout ──
         tabContentHost = new LinearLayout(getContext);
         tabContentHost.setOrientation(LinearLayout.VERTICAL);
-        ViewGroup parent2 = (ViewGroup) linearLayout.getParent();
-        int idx2 = parent2.indexOfChild(linearLayout);
-        parent2.addView(tabContentHost, idx2 + 1);
-        linearLayout.setVisibility(View.GONE); // original column unused now
+        linearLayout.addView(tabContentHost);
 
-        // restore last active tab
         try {
             activeTabIndex = getContext.getSharedPreferences("sparta", 0)
                     .getInt(PREF_LAST_TAB, 0);
         } catch (Exception ignored) {}
+        if (activeTabIndex >= order.size()) activeTabIndex = 0;
 
         for (int t = 0; t < order.size(); t++) {
+            final int tabIndex = t;
             String cat = order.get(t);
+
+            if (showTabs) {
+                TextView tb = new TextView(getContext);
+                tb.setText(cat);
+                tb.setTextSize(12);
+                tb.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+                tb.setPadding(28, 16, 28, 16);
+                tb.setGravity(Gravity.CENTER);
+                tb.setLayoutParams(new LinearLayout.LayoutParams(
+                        WRAP_CONTENT, WRAP_CONTENT));
+                tb.setOnClickListener(v -> {
+                    activeTabIndex = tabIndex;
+                    getContext.getSharedPreferences("sparta", 0)
+                            .edit().putInt(PREF_LAST_TAB, tabIndex).apply();
+                    highlightTab();
+                });
+                tabBarRow.addView(tb);
+            }
+
             LinearLayout page = new LinearLayout(getContext);
             page.setOrientation(LinearLayout.VERTICAL);
             page.setVisibility(t == activeTabIndex ? View.VISIBLE : View.GONE);
             tabContentHost.addView(page);
             tabPages.put(cat, page);
 
-            // app info goes on the first tab only
             if (t == 0) {
                 iTextView.add(page, "App Package: " + getContext.getPackageName());
                 iTextView.add(page, "App Name: "
@@ -404,60 +439,47 @@ public class Menu extends BaseMenu {
                 } catch (Exception e) { e.printStackTrace(); }
             }
 
-            for (FeatureEntity item : buckets.get(cat)) {
-                if (ComponentType.valueOf(item.type) == ComponentType.ICollapse) {
-                    iCollapse.add(page, item.name, item.enabled);
-                    if (item.children != null && !item.children.isEmpty()) {
-                        LinearLayout collapseContent = iCollapse.getCollapseContent();
-                        for (FeatureEntity child : item.children) {
-                            addFeatureComponent(collapseContent, child);
+            List<FeatureEntity> bucket = buckets.get(cat);
+            if (bucket == null) continue;
+            for (FeatureEntity item : bucket) {
+                try {
+                    if (ComponentType.valueOf(item.type) == ComponentType.ICollapse) {
+                        iCollapse.add(page, item.name, item.enabled);
+                        if (item.children != null && !item.children.isEmpty()) {
+                            LinearLayout collapseContent = iCollapse.getCollapseContent();
+                            for (FeatureEntity child : item.children) {
+                                addFeatureComponent(collapseContent, child);
+                            }
                         }
+                    } else {
+                        addFeatureComponent(page, item);
                     }
-                } else {
-                    addFeatureComponent(page, item);
+                } catch (Throwable t2) {
+                    Log.e(TAG, "widget render failed: " + item.type, t2);
                 }
             }
-
-            if (showTabs) addTabButton(cat, t);
         }
 
-        highlightTab(activeTabIndex);
+        highlightTab();
     }
 
-    private void addTabButton(String label, final int index) {
-        TextView tb = new TextView(getContext);
-        tb.setText(label);
-        tb.setTextSize(12);
-        tb.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        tb.setPadding(28, 14, 28, 14);
-        tb.setGravity(Gravity.CENTER);
-        tb.setOnClickListener(v -> {
-            activeTabIndex = index;
-            getContext.getSharedPreferences("sparta", 0)
-                    .edit().putInt(PREF_LAST_TAB, index).apply();
-            highlightTab(index);
-        });
-        tabBarRow.addView(tb);
-    }
-
-    private void highlightTab(int index) {
+    private void highlightTab() {
         int i = 0;
         for (String cat : tabPages.keySet()) {
             LinearLayout page = tabPages.get(cat);
-            page.setVisibility(i == index ? View.VISIBLE : View.GONE);
-            if (tabBarRow != null && i < tabBarRow.getChildCount()) {
-                TextView tb = (TextView) tabBarRow.getChildAt(i);
-                boolean on = i == index;
+            page.setVisibility(i == activeTabIndex ? View.VISIBLE : View.GONE);
+            i++;
+        }
+        if (tabBarRow != null) {
+            for (int k = 0; k < tabBarRow.getChildCount(); k++) {
+                TextView tb = (TextView) tabBarRow.getChildAt(k);
+                boolean on = k == activeTabIndex;
                 tb.setTextColor(on ? Colors.accentBlend(0.5f) : Colors.TEXT_COLOR_2);
                 tb.setBackground(com.android.support.components.SpartanAnim.roundBg(
                         on ? Color.parseColor("#26FFFFFF") : Color.TRANSPARENT,
-                        10f, 0));
+                        5f, 0));
             }
-            i++;
         }
-        // animate the content host slightly on switch
-        if (tabContentHost != null)
-            com.android.support.components.SpartanAnim.bounce(tabContentHost);
     }
 
     private void addFeatureComponent(LinearLayout layout, FeatureEntity item) {
