@@ -19,8 +19,18 @@ jobs:
           ndk-version: r27c
       - name: Grant execute permission to gradlew
         run: chmod +x gradlew
+      - name: Ensure gradle-wrapper.jar exists
+        run: |
+          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
+            echo "Wrapper jar missing — downloading Gradle 8.13 directly"
+            curl -sL https://services.gradle.org/distributions/gradle-8.13-bin.zip -o /tmp/g.zip
+            unzip -q /tmp/g.zip -d /opt
+            echo "GRADLE_CMD=/opt/gradle-8.13/bin/gradle" >> $GITHUB_ENV
+          else
+            echo "GRADLE_CMD=./gradlew" >> $GITHUB_ENV
+          fi
       - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: $GRADLE_CMD assembleDebug --no-daemon --stacktrace
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
