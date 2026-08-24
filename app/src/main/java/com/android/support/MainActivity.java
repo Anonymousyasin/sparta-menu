@@ -2,14 +2,10 @@ package com.android.support;
 
 import android.app.Activity;
 import android.os.Bundle;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
+import android.widget.TextView;
+import android.view.ViewGroup;
 import android.graphics.Color;
-import android.os.Handler;
-import android.os.Looper;
 import android.util.Log;
-import fi.iki.elonen.NanoHTTPD;
 
 /**
  * Sparta Menu launcher activity.
