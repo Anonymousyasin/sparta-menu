@@ -26,8 +26,15 @@ public class ICategory {
     public void add(LinearLayout mContent, String text) {
 
         GradientDrawable categoryDrawable = new GradientDrawable();
-        categoryDrawable.setCornerRadius(Menu.MENU_CORNER_RADIUS); //Set corner
-        categoryDrawable.setColor(Colors.MENU_BG_COLOR);
+        categoryDrawable.setCornerRadius(Colors.RADIUS_WIDGET);
+        categoryDrawable.setColor(Colors.MENU_FEATURE_BG_COLOR);
+        categoryDrawable.setStroke(1, Colors.CARD_STROKE);
+        // accent left-edge bar effect via two-tone gradient
+        categoryDrawable.setOrientation(android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT);
+        categoryDrawable.setColors(new int[]{Colors.accentStart(), Colors.MENU_FEATURE_BG_COLOR});
+        float[] radii = new float[8];
+        java.util.Arrays.fill(radii, Colors.RADIUS_WIDGET * 2f); // px
+        categoryDrawable.setCornerRadii(radii);
 
         TextView textView = new TextView(context);
         textView.setBackground(categoryDrawable);
@@ -35,7 +42,8 @@ public class ICategory {
         textView.setGravity(Gravity.CENTER);
         textView.setTextColor(Colors.TEXT_COLOR_2);
         textView.setTypeface(typeface, Typeface.BOLD);
-        textView.setPadding(0, 5, 0, 5);
+        textView.setPadding(0, 12, 0, 12);
+        SpartanAnim.bounce(textView);
         mContent.addView(textView);
     }
 }

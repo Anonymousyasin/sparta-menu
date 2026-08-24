@@ -27,7 +27,7 @@ public class IButton {
 
     public void add(LinearLayout mContent, final int featNum, final String featName) {
         GradientDrawable buttonDrawable = new GradientDrawable();
-        buttonDrawable.setCornerRadius(Menu.MENU_CORNER_RADIUS); //Set corner
+        buttonDrawable.setCornerRadius(Colors.RADIUS_WIDGET * 2f);
         buttonDrawable.setColor(Colors.MENU_BG_COLOR); //Set background
 
         LinearLayout.LayoutParams mLayoutParam = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);

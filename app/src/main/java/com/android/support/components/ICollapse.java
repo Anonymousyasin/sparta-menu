@@ -42,7 +42,7 @@ public class ICollapse {
 
         LinearLayout collapse = new LinearLayout(context);
         GradientDrawable collapseDrawable = new GradientDrawable();
-        collapseDrawable.setCornerRadius(Menu.MENU_CORNER_RADIUS); //Set corner
+        collapseDrawable.setCornerRadius(Colors.RADIUS_WIDGET * 2f);
         collapseDrawable.setColor(Colors.MENU_BG_COLOR); //Set background color
 
         collapse.setBackground(collapseDrawable); //Apply GradientDrawable to it
@@ -52,7 +52,7 @@ public class ICollapse {
 
         GradientDrawable collapseContentDrawable = new GradientDrawable();
 
-        collapseContentDrawable.setCornerRadius(Menu.MENU_CORNER_RADIUS); //Set corner
+        collapseContentDrawable.setCornerRadius(Colors.RADIUS_WIDGET * 2f);
         collapseContentDrawable.setColor(Colors.MENU_FEATURE_BG_COLOR); //Set backgroun
         collapseContentDrawable.setStroke(2, Colors.MENU_BG_COLOR); //Set border
 

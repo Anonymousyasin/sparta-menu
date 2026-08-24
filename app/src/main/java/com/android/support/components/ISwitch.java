@@ -72,7 +72,7 @@ public class ISwitch {
         mSwitch.setTextColor(Colors.TEXT_COLOR_2);
         mSwitch.setTypeface(typeface);
 
-        // Set switch color states
+        // Set switch color states (accent gradient start → accent)
         ColorStateList buttonStates = new ColorStateList(
                 new int[][]{
                         new int[]{-android.R.attr.state_enabled},
@@ -80,8 +80,8 @@ public class ISwitch {
                         new int[]{}
                 },
                 new int[]{
-                        Color.BLUE,
-                        Colors.ToggleON,
+                        Colors.ToggleOFF,
+                        Colors.accentBlend(0.6f),
                         Colors.ToggleOFF
                 }
         );
@@ -95,14 +95,17 @@ public class ISwitch {
 
         boolean isOn = Preferences.loadPrefBool(featName, featNum, swiOn);
         mSwitch.setChecked(isOn);
-        mLayoutContainer.setBackgroundColor(isOn ? Color.parseColor("#40EC4857") : Color.parseColor("#00000000"));
+        mLayoutContainer.setBackgroundColor(isOn
+                ? Colors.MENU_FEATURE_BG_COLOR : Color.TRANSPARENT);
 
         // ======= Behavior =======
         mLayoutContainer.setOnClickListener(v -> mSwitch.performClick());
 
         mSwitch.setOnCheckedChangeListener((v, isChecked) -> {
             Preferences.changeFeatureBool(featName, featNum, isChecked);
-            mLayoutContainer.setBackgroundColor(isChecked ? Color.parseColor("#40EC4857") : Color.parseColor("#00000000"));
+            mLayoutContainer.setBackgroundColor(isChecked
+                    ? Colors.MENU_FEATURE_BG_COLOR : Color.TRANSPARENT);
+            SpartanAnim.bounce(mLayoutContainer);
         });
 
         // ======= Add views =======

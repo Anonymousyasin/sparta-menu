@@ -48,7 +48,7 @@ public class Menu extends BaseMenu {
     public static int MENU_WIDTH = 290;
     public static int POS_X = 0;
     public static int POS_Y = 100;
-    public static float MENU_CORNER_RADIUS = 0f;
+    public static float MENU_CORNER_RADIUS = 44f; // Sparta glass (22dp * 2 density-ish)
     boolean isExpanded = false;
     boolean overlayRequired;
 
@@ -84,6 +84,7 @@ public class Menu extends BaseMenu {
     // Reference: https://www.androidhive.info/2016/11/android-floating-widget-like-facebook-chat-head/
     public Menu(Context context) {
         super(context);
+        com.android.support.components.Colors.refresh(); // apply accent preset
         drawView    = new DrawView(getContext);
         InitComponent(context);
     }
@@ -123,7 +124,7 @@ public class Menu extends BaseMenu {
         GradientDrawable gdMenuBody = new GradientDrawable();
         gdMenuBody.setCornerRadius(MENU_CORNER_RADIUS); //Set corner
         gdMenuBody.setColor(Colors.MENU_BG_COLOR); //Set background color
-//        gdMenuBody.setStroke(1, Color.parseColor("#32cb00")); //Set border
+        gdMenuBody.setStroke(1, Colors.CARD_STROKE); // Sparta glass border
         __mExpanded.setBackground(gdMenuBody); //Apply GradientDrawable to it
 
         //********** Title **********
@@ -219,6 +220,7 @@ public class Menu extends BaseMenu {
         __frameLayout.addView(__mRootContainer);
         __featureContainer.removeAllViews();
         featureList(GetFeatureList(), __featureContainer);
+        com.android.support.components.SpartanAnim.popIn(__mRootContainer);
     }
 
     private native void Init(Context context, TextView title, TextView subTitle);
@@ -310,20 +312,75 @@ public class Menu extends BaseMenu {
     private void featureList(String feature, LinearLayout linearLayout) {
 
         List<FeatureEntity> features = FeatureParser.parse(feature);
+
+        // ── Sparta: live search bar ──
+        android.widget.EditText search = new android.widget.EditText(getContext);
+        search.setHint("🔍  Search features…");
+        search.setHintTextColor(Colors.TEXT_COLOR_2);
+        search.setTextColor(Colors.TEXT_COLOR);
+        search.setTextSize(13);
+        search.setSingleLine(true);
+        search.setBackground(com.android.support.components.SpartanAnim.roundBg(
+                Color.parseColor("#33151C30"), 14f, Colors.CARD_STROKE));
+        search.setPadding(24, 18, 24, 18);
+        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        sp.setMargins(6, 10, 6, 12);
+        search.setLayoutParams(sp);
+        linearLayout.addView(search);
+
+        // container that holds the actual rendered features (filterable)
+        LinearLayout filtered = new LinearLayout(getContext);
+        filtered.setOrientation(LinearLayout.VERTICAL);
+        linearLayout.addView(filtered);
+
+        search.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void afterTextChanged(android.text.Editable s) {
+                String q = s.toString().toLowerCase();
+                for (int i = 0; i < filtered.getChildCount(); i++) {
+                    View child = filtered.getChildAt(i);
+                    // hide rows not matching query; keep headers always visible
+                    Object tag = child.getTag();
+                    boolean isHeader = tag != null && "header".equals(tag.toString());
+                    if (isHeader || q.isEmpty()) { child.setVisibility(View.VISIBLE); continue; }
+                    String txt = child.toString().toLowerCase();
+                    java.util.ArrayList<android.view.View> texts = new java.util.ArrayList<>();
+                    collectTexts(child, texts);
+                    boolean match = false;
+                    for (android.view.View tvw : texts) {
+                        if (tvw instanceof android.widget.TextView &&
+                                ((android.widget.TextView) tvw).getText().toString()
+                                        .toLowerCase().contains(q)) { match = true; break; }
+                    }
+                    child.setVisibility(match ? View.VISIBLE : View.GONE);
+                }
+            }
+            private void collectTexts(View v, java.util.List<android.view.View> out) {
+                if (v instanceof android.widget.TextView) out.add(v);
+                if (v instanceof ViewGroup) {
+                    ViewGroup vg = (ViewGroup) v;
+                    for (int i = 0; i < vg.getChildCount(); i++) collectTexts(vg.getChildAt(i), out);
+                }
+            }
+        });
+
         // App details
-        iTextView.add(linearLayout, "App Package: " + getContext.getPackageName());
+        iTextView.add(filtered, "App Package: " + getContext.getPackageName());
         // AppName
-        iTextView.add(linearLayout, "App Name: " + getContext.getApplicationInfo().loadLabel(getContext.getPackageManager()));
+        iTextView.add(filtered, "App Name: " + getContext.getApplicationInfo().loadLabel(getContext.getPackageManager()));
         // App Version
         try {
-            iTextView.add(linearLayout, "App Version: " + getContext.getPackageManager().getPackageInfo(getContext.getPackageName(), 0).versionName);
+            iTextView.add(filtered, "App Version: " + getContext.getPackageManager().getPackageInfo(getContext.getPackageName(), 0).versionName);
         } catch (Exception e) {
             e.printStackTrace();
         }
 
         for (FeatureEntity item : features) {
             if (ComponentType.valueOf(item.type) == ComponentType.ICollapse) {// Add the collapse group first
-                iCollapse.add(linearLayout, item.name, item.enabled);
+                iCollapse.add(filtered, item.name, item.enabled);
 
                 // Then render its children inside the collapseContent
                 if (item.children != null && !item.children.isEmpty()) {
@@ -333,7 +390,7 @@ public class Menu extends BaseMenu {
                     }
                 }
             } else {// Non-collapse items
-                addFeatureComponent(linearLayout, item);
+                addFeatureComponent(filtered, item);
             }
         }
     }
