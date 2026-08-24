@@ -16,6 +16,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
 import android.widget.ScrollView;
@@ -311,91 +312,154 @@ public class Menu extends BaseMenu {
         };
     }
 
-    private void featureList(String feature, LinearLayout linearLayout) {
+    // ── Sparta: tab state ──
+    private LinearLayout tabBarRow;
+    private LinearLayout tabContentHost;
+    private final java.util.LinkedHashMap<String, LinearLayout> tabPages =
+            new java.util.LinkedHashMap<>();
+    private int activeTabIndex = 0;
+    private static final String PREF_LAST_TAB = "sparta_last_tab";
 
+    /**
+     * Tab-based layout (ImGui style): every ICategory becomes a tab;
+     * its features render into that tab's own page. Uncategorized items
+     * land in a "Misc" tab.
+     */
+    @SuppressLint("WrongConstant")
+    private void featureList(String feature, LinearLayout linearLayout) {
         List<FeatureEntity> features = FeatureParser.parse(feature);
 
-        // ── Sparta: live search bar ──
-        android.widget.EditText search = new android.widget.EditText(getContext);
-        search.setHint("🔍  Search features…");
-        search.setHintTextColor(Colors.TEXT_COLOR_2);
-        search.setTextColor(Colors.TEXT_COLOR);
-        search.setTextSize(13);
-        search.setSingleLine(true);
-        search.setBackground(com.android.support.components.SpartanAnim.roundBg(
-                Color.parseColor("#33151C30"), 14f, Colors.CARD_STROKE));
-        search.setPadding(24, 18, 24, 18);
-        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        sp.setMargins(6, 10, 6, 12);
-        search.setLayoutParams(sp);
-        linearLayout.addView(search);
-
-        // container that holds the actual rendered features (filterable)
-        LinearLayout filtered = new LinearLayout(getContext);
-        filtered.setOrientation(LinearLayout.VERTICAL);
-        linearLayout.addView(filtered);
-
-        search.addTextChangedListener(new android.text.TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
-            @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
-            @Override public void afterTextChanged(android.text.Editable s) {
-                String q = s.toString().toLowerCase();
-                for (int i = 0; i < filtered.getChildCount(); i++) {
-                    View child = filtered.getChildAt(i);
-                    // hide rows not matching query; keep headers always visible
-                    Object tag = child.getTag();
-                    boolean isHeader = tag != null && "header".equals(tag.toString());
-                    if (isHeader || q.isEmpty()) { child.setVisibility(View.VISIBLE); continue; }
-                    String txt = child.toString().toLowerCase();
-                    java.util.ArrayList<android.view.View> texts = new java.util.ArrayList<>();
-                    collectTexts(child, texts);
-                    boolean match = false;
-                    for (android.view.View tvw : texts) {
-                        if (tvw instanceof android.widget.TextView &&
-                                ((android.widget.TextView) tvw).getText().toString()
-                                        .toLowerCase().contains(q)) { match = true; break; }
-                    }
-                    child.setVisibility(match ? View.VISIBLE : View.GONE);
-                }
-            }
-            private void collectTexts(View v, java.util.List<android.view.View> out) {
-                if (v instanceof android.widget.TextView) out.add(v);
-                if (v instanceof ViewGroup) {
-                    ViewGroup vg = (ViewGroup) v;
-                    for (int i = 0; i < vg.getChildCount(); i++) collectTexts(vg.getChildAt(i), out);
-                }
-            }
-        });
-
-        // App details
-        iTextView.add(filtered, "App Package: " + getContext.getPackageName());
-        // AppName
-        iTextView.add(filtered, "App Name: " + getContext.getApplicationInfo().loadLabel(getContext.getPackageManager()));
-        // App Version
-        try {
-            iTextView.add(filtered, "App Version: " + getContext.getPackageManager().getPackageInfo(getContext.getPackageName(), 0).versionName);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        // ── bucket features by their preceding ICategory ──
+        java.util.ArrayList<String> order = new java.util.ArrayList<>();
+        java.util.HashMap<String, List<FeatureEntity>> buckets = new java.util.HashMap<>();
+        String current = "Misc";
+        order.add(current);
+        buckets.put(current, new java.util.ArrayList<>());
 
         for (FeatureEntity item : features) {
-            if (ComponentType.valueOf(item.type) == ComponentType.ICollapse) {// Add the collapse group first
-                iCollapse.add(filtered, item.name, item.enabled);
-
-                // Then render its children inside the collapseContent
-                if (item.children != null && !item.children.isEmpty()) {
-                    LinearLayout collapseContent = iCollapse.getCollapseContent();
-                    for (FeatureEntity child : item.children) {
-                        addFeatureComponent(collapseContent, child);
-                    }
+            if (ComponentType.valueOf(item.type) == ComponentType.ICategory) {
+                current = item.name;
+                if (!buckets.containsKey(current)) {
+                    order.add(current);
+                    buckets.put(current, new java.util.ArrayList<>());
                 }
-            } else {// Non-collapse items
-                addFeatureComponent(filtered, item);
+                continue; // category name becomes the tab label
             }
+            buckets.get(current).add(item);
         }
+
+        // hide tab bar if only one tab
+        boolean showTabs = order.size() > 1;
+
+        // ── build tab bar ──
+        if (showTabs) {
+            HorizontalScrollView tabScroll = new HorizontalScrollView(getContext);
+            tabScroll.setHorizontalScrollBarEnabled(false);
+            tabScroll.setBackgroundColor(Color.parseColor("#141B2E"));
+            tabScroll.setLayoutParams(new LinearLayout.LayoutParams(
+                    MATCH_PARENT, WRAP_CONTENT));
+            tabBarRow = new LinearLayout(getContext);
+            tabBarRow.setOrientation(LinearLayout.HORIZONTAL);
+            tabBarRow.setPadding(12, 8, 12, 8);
+            tabScroll.addView(tabBarRow);
+
+            // insert tab bar above the scroll area in the menu body
+            ViewGroup parent = (ViewGroup) linearLayout.getParent();
+            int idx = parent.indexOfChild(linearLayout);
+            parent.addView(tabScroll, idx);
+        }
+
+        // ── content host: one page per tab ──
+        tabContentHost = new LinearLayout(getContext);
+        tabContentHost.setOrientation(LinearLayout.VERTICAL);
+        ViewGroup parent2 = (ViewGroup) linearLayout.getParent();
+        int idx2 = parent2.indexOfChild(linearLayout);
+        parent2.addView(tabContentHost, idx2 + 1);
+        linearLayout.setVisibility(View.GONE); // original column unused now
+
+        // restore last active tab
+        try {
+            activeTabIndex = getContext.getSharedPreferences("sparta", 0)
+                    .getInt(PREF_LAST_TAB, 0);
+        } catch (Exception ignored) {}
+
+        for (int t = 0; t < order.size(); t++) {
+            String cat = order.get(t);
+            LinearLayout page = new LinearLayout(getContext);
+            page.setOrientation(LinearLayout.VERTICAL);
+            page.setVisibility(t == activeTabIndex ? View.VISIBLE : View.GONE);
+            tabContentHost.addView(page);
+            tabPages.put(cat, page);
+
+            // app info goes on the first tab only
+            if (t == 0) {
+                iTextView.add(page, "App Package: " + getContext.getPackageName());
+                iTextView.add(page, "App Name: "
+                        + getContext.getApplicationInfo().loadLabel(
+                                getContext.getPackageManager()));
+                try {
+                    iTextView.add(page, "App Version: "
+                            + getContext.getPackageManager().getPackageInfo(
+                                    getContext.getPackageName(), 0).versionName);
+                } catch (Exception e) { e.printStackTrace(); }
+            }
+
+            for (FeatureEntity item : buckets.get(cat)) {
+                if (ComponentType.valueOf(item.type) == ComponentType.ICollapse) {
+                    iCollapse.add(page, item.name, item.enabled);
+                    if (item.children != null && !item.children.isEmpty()) {
+                        LinearLayout collapseContent = iCollapse.getCollapseContent();
+                        for (FeatureEntity child : item.children) {
+                            addFeatureComponent(collapseContent, child);
+                        }
+                    }
+                } else {
+                    addFeatureComponent(page, item);
+                }
+            }
+
+            if (showTabs) addTabButton(cat, t);
+        }
+
+        highlightTab(activeTabIndex);
     }
+
+    private void addTabButton(String label, final int index) {
+        TextView tb = new TextView(getContext);
+        tb.setText(label);
+        tb.setTextSize(12);
+        tb.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        tb.setPadding(28, 14, 28, 14);
+        tb.setGravity(Gravity.CENTER);
+        tb.setOnClickListener(v -> {
+            activeTabIndex = index;
+            getContext.getSharedPreferences("sparta", 0)
+                    .edit().putInt(PREF_LAST_TAB, index).apply();
+            highlightTab(index);
+        });
+        tabBarRow.addView(tb);
+    }
+
+    private void highlightTab(int index) {
+        int i = 0;
+        for (String cat : tabPages.keySet()) {
+            LinearLayout page = tabPages.get(cat);
+            page.setVisibility(i == index ? View.VISIBLE : View.GONE);
+            if (tabBarRow != null && i < tabBarRow.getChildCount()) {
+                TextView tb = (TextView) tabBarRow.getChildAt(i);
+                boolean on = i == index;
+                tb.setTextColor(on ? Colors.accentBlend(0.5f) : Colors.TEXT_COLOR_2);
+                tb.setBackground(com.android.support.components.SpartanAnim.roundBg(
+                        on ? Color.parseColor("#26FFFFFF") : Color.TRANSPARENT,
+                        10f, 0));
+            }
+            i++;
+        }
+        // animate the content host slightly on switch
+        if (tabContentHost != null)
+            com.android.support.components.SpartanAnim.bounce(tabContentHost);
+    }
+
     private void addFeatureComponent(LinearLayout layout, FeatureEntity item) {
         ComponentType type = ComponentType.valueOf(item.type);
         switch (type) {
